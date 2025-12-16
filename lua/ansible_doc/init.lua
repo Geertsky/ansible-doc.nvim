@@ -118,7 +118,27 @@ local function pick_entry(json_tbl, keyword)
 end
 
 -- ---------- main ----------
+local function open_entry(entry)
+  local lines = render_markdown(entry.fqcn, entry.type, entry.obj)
+
+  vim.schedule(function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(
+      buf,
+      ("ansible-doc://%s/%s"):format(entry.type, entry.fqcn)
+    )
+    vim.bo[buf].filetype = "markdown"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.cmd("botright split")
+    vim.api.nvim_win_set_buf(0, buf)
+    vim.bo[buf].modifiable = false
+  end)
+end
+
+
 function M.lookup_ansible_doc()
+  local finalized = false
   local kw = vim.fn.expand("<cWORD>"):gsub(":$", "")
   if kw == "" then
     vim.notify("[ansible-doc] No keyword under cursor", vim.log.levels.WARN)
@@ -130,36 +150,69 @@ function M.lookup_ansible_doc()
     "lookup","netconf","shell","vars","module","strategy","test","filter","role","keyword"
   }
 
-  local shown = false
+  local results = {}
+  local pending = #types
+
+  local function maybe_finish()
+  pending = pending - 1
+  if pending > 0 or finalized then
+    return
+  end
+  finalized = true
+
+  -- defer *all* UI work
+  vim.schedule(function()
+    if #results == 0 then
+      vim.notify(("[ansible-doc] No docs for %q"):format(kw), vim.log.levels.WARN)
+      return
+    end
+
+    if #results == 1 then
+      open_entry(results[1])
+      return
+    end
+
+    vim.ui.select(results, {
+      prompt = "Select Ansible documentation:",
+      format_item = function(item)
+        return string.format("%-8s %s", item.type, item.fqcn)
+      end,
+    }, function(choice)
+      if choice then
+        open_entry(choice)
+      end
+    end)
+  end)
+end
+
+
   for _, t in ipairs(types) do
     local args = { "ansible-doc", "-t", t, "-j", kw }
-    vim.system(args, { text = true, env = { PAGER = "cat", NO_COLOR = "1", TERM = "dumb" } }, function(res)
-      if shown or res.code ~= 0 or not res.stdout or res.stdout == "" then return end
-      local ok, parsed = pcall(vim.json.decode, res.stdout)
-      if not ok or type(parsed) ~= "table" then return end
-      local fqcn, obj = pick_entry(parsed, kw)
-      if not fqcn then return end
-      shown = true
+    vim.system(args, {
+      text = true,
+      env = { PAGER = "cat", NO_COLOR = "1", TERM = "dumb" },
+    }, function(res)
+      if res.code ~= 0 or not res.stdout or res.stdout == "" then
+        return maybe_finish()
+      end
 
-      local lines = render_markdown(fqcn, t, obj)
-      vim.schedule(function()
-        local buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_name(buf, ("ansible-doc://%s/%s"):format(t, fqcn))
-        vim.bo[buf].filetype = "markdown"
-        vim.bo[buf].bufhidden = "wipe"
-        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-        vim.cmd("botright split")
-        vim.api.nvim_win_set_buf(0, buf)
-        vim.bo[buf].modifiable = false
-      end)
+      local ok, parsed = pcall(vim.json.decode, res.stdout)
+      if not ok or type(parsed) ~= "table" then
+        return maybe_finish()
+      end
+
+      local fqcn, obj = pick_entry(parsed, kw)
+      if fqcn then
+        results[#results + 1] = {
+          type = t,
+          fqcn = fqcn,
+          obj  = obj,
+        }
+      end
+
+      maybe_finish()
     end)
   end
-
-  vim.defer_fn(function()
-    if not shown then
-      vim.notify(("[ansible-doc] No docs for %q"):format(kw), vim.log.levels.WARN)
-    end
-  end, 4000)
 end
 
 function M.setup(opts)
