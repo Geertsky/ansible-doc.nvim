@@ -6,6 +6,8 @@ A small Neovim plugin to look up documentation for Ansible modules, plugins, or 
 
 - Extracts the word under your cursor.
 - Runs `ansible-doc -t <type> <keyword>` for all types in parallel.
+- Runs ansible-doc -t <type> <keyword> for all types in parallel.
+- If multiple types match, prompts you to select which hit to open.
 - Opens a terminal split with the first successful documentation match.
 - Falls back with a warning if no match is found.
 
