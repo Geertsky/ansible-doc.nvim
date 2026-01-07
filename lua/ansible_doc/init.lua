@@ -1,6 +1,34 @@
 local M = {}
 
--- ---------- small helpers (newline-safe) ----------
+-- -----------------------
+-- Defaults / configuration
+-- -----------------------
+M.opts = {
+  mapping = "K",
+
+  -- List of ansible-doc plugin types to probe.
+  types = {
+    "become", "cache", "callback", "cliconf", "connection", "httpapi", "inventory",
+    "lookup", "netconf", "shell", "vars", "module", "strategy", "test", "filter", "role", "keyword",
+  },
+
+  -- Limit concurrent `ansible-doc` processes.
+  max_jobs = 6,
+
+  -- Open docs in a split. Use "vsplit" if you prefer.
+  open_cmd = "botright split",
+
+  -- Add these env vars to the child process.
+  env = {
+    PAGER = "cat",
+    NO_COLOR = "1",
+    TERM = "dumb",
+  },
+}
+
+-- -----------------------
+-- Small helpers
+-- -----------------------
 local function push(t, s)
   t[#t + 1] = (s == nil and "" or tostring(s)):gsub("\r?\n", " ")
 end
@@ -37,13 +65,24 @@ local function fmt_choices(c)
   return #acc > 0 and table.concat(acc, ", ") or nil
 end
 
--- ---------- renderer ----------
+local function sorted_keys(tbl)
+  local keys = {}
+  for k in pairs(tbl or {}) do keys[#keys + 1] = k end
+  table.sort(keys)
+  return keys
+end
+
+-- -----------------------
+-- Markdown renderer
+-- -----------------------
 local function render_markdown(fqcn, plug_type, obj)
   local doc = obj.doc or obj
   local lines = {}
 
   push(lines, "# " .. (doc.module or doc.name or fqcn or "") .. " (" .. plug_type .. ")")
-  if fqcn and fqcn ~= (doc.module or doc.name) then push(lines, "**FQCN:** " .. fqcn) end
+  if fqcn and fqcn ~= (doc.module or doc.name) then
+    push(lines, "**FQCN:** " .. fqcn)
+  end
 
   local short = doc.short_description or normalize_desc(doc.description)
   if short ~= "" then
@@ -57,46 +96,72 @@ local function render_markdown(fqcn, plug_type, obj)
   end
 
   if type(doc.options) == "table" and next(doc.options) then
-    push(lines, ""); push(lines, "## Options")
-    for opt, spec in pairs(doc.options) do
-      push(lines, ""); push(lines, "### " .. opt)
+    push(lines, "")
+    push(lines, "## Options")
+    for _, opt in ipairs(sorted_keys(doc.options)) do
+      local spec = doc.options[opt]
+      push(lines, "")
+      push(lines, "### " .. opt)
+
       local meta = {}
-      if spec.type     then meta[#meta + 1] = "`" .. tostring(spec.type) .. "`" end
+      if spec.type then meta[#meta + 1] = "`" .. tostring(spec.type) .. "`" end
       if spec.required ~= nil then meta[#meta + 1] = "required: " .. tostring(spec.required) end
-      if spec.default  ~= nil then meta[#meta + 1] = "default: " .. inspect_one_line(spec.default) end
+      if spec.default ~= nil then meta[#meta + 1] = "default: " .. inspect_one_line(spec.default) end
       local ch = fmt_choices(spec.choices); if ch then meta[#meta + 1] = "choices: " .. ch end
       if #meta > 0 then push(lines, "*(" .. table.concat(meta, " · ") .. ")*") end
+
       local desc = normalize_desc(spec.description)
-      if desc ~= "" then for _, l in ipairs(split_lines(desc)) do push(lines, l) end end
+      if desc ~= "" then
+        for _, l in ipairs(split_lines(desc)) do push(lines, l) end
+      end
     end
   end
 
   if type(obj["return"]) == "table" and next(obj["return"]) then
-    push(lines, ""); push(lines, "## Return values")
-    for name, spec in pairs(obj["return"]) do
-      push(lines, ""); push(lines, "### " .. name)
+    push(lines, "")
+    push(lines, "## Return values")
+    for _, name in ipairs(sorted_keys(obj["return"])) do
+      local spec = obj["return"][name]
+      push(lines, "")
+      push(lines, "### " .. name)
       if spec.type then push(lines, "type: `" .. tostring(spec.type) .. "`") end
-      if spec.returned then for _, l in ipairs(split_lines("returned: " .. normalize_desc(spec.returned))) do push(lines, l) end end
-      if spec.sample ~= nil then for _, l in ipairs(split_lines("sample: " .. inspect_one_line(spec.sample))) do push(lines, l) end end
-      if spec.description then for _, l in ipairs(split_lines(normalize_desc(spec.description))) do push(lines, l) end end
+      if spec.returned then
+        for _, l in ipairs(split_lines("returned: " .. normalize_desc(spec.returned))) do push(lines, l) end
+      end
+      if spec.sample ~= nil then
+        for _, l in ipairs(split_lines("sample: " .. inspect_one_line(spec.sample))) do push(lines, l) end
+      end
+      if spec.description then
+        for _, l in ipairs(split_lines(normalize_desc(spec.description))) do push(lines, l) end
+      end
     end
   end
 
   if type(doc.notes) == "table" and #doc.notes > 0 then
-    push(lines, ""); push(lines, "## Notes")
-    for _, n in ipairs(doc.notes) do for _, l in ipairs(split_lines("- " .. normalize_desc(n))) do push(lines, l) end end
+    push(lines, "")
+    push(lines, "## Notes")
+    for _, n in ipairs(doc.notes) do
+      for _, l in ipairs(split_lines("- " .. normalize_desc(n))) do push(lines, l) end
+    end
   end
 
   if type(doc.seealso) == "table" and #doc.seealso > 0 then
-    push(lines, ""); push(lines, "## See also")
+    push(lines, "")
+    push(lines, "## See also")
     for _, n in ipairs(doc.seealso) do
-      if type(n) == "table" and n.module then push(lines, "- " .. n.module)
-      elseif type(n) == "string" then push(lines, "- " .. n) end
+      if type(n) == "table" and n.module then
+        push(lines, "- " .. n.module)
+      elseif type(n) == "string" then
+        push(lines, "- " .. n)
+      end
     end
   end
 
   if type(obj.examples) == "string" and obj.examples:match("%S") then
-    push(lines, ""); push(lines, "## Examples"); push(lines, ""); push(lines, "```yaml")
+    push(lines, "")
+    push(lines, "## Examples")
+    push(lines, "")
+    push(lines, "```yaml")
     for _, l in ipairs(split_lines(obj.examples)) do push(lines, l) end
     push(lines, "```")
   end
@@ -117,107 +182,141 @@ local function pick_entry(json_tbl, keyword)
   return nil, nil
 end
 
--- ---------- main ----------
-local function open_entry(entry)
-  local lines = render_markdown(entry.fqcn, entry.type, entry.obj)
+local function find_existing_buf(bufname)
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(b) and vim.api.nvim_buf_get_name(b) == bufname then
+      return b
+    end
+  end
+  return nil
+end
 
-  vim.schedule(function()
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(
-      buf,
-      ("ansible-doc://%s/%s"):format(entry.type, entry.fqcn)
-    )
-    vim.bo[buf].filetype = "markdown"
+local function open_entry(opts, entry)
+  local bufname = ("ansible-doc://%s/%s"):format(entry.type, entry.fqcn)
+  local buf = find_existing_buf(bufname)
+  if not buf then
+    buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, bufname)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].swapfile = false
     vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].filetype = "markdown"
+    vim.bo[buf].modifiable = true
+    vim.bo[buf].readonly = true
+
+    local lines = render_markdown(entry.fqcn, entry.type, entry.obj)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.cmd("botright split")
-    vim.api.nvim_win_set_buf(0, buf)
     vim.bo[buf].modifiable = false
+  end
+
+  vim.cmd(opts.open_cmd)
+  vim.api.nvim_win_set_buf(0, buf)
+end
+
+-- -----------------------
+-- Async lookup (bounded concurrency)
+-- -----------------------
+local function system_ansible_doc(opts, plug_type, kw, cb)
+  local args = { "ansible-doc", "-t", plug_type, "-j", kw }
+  vim.system(args, { text = true, env = opts.env }, function(res)
+    if res.code ~= 0 or not res.stdout or res.stdout == "" then
+      return cb(nil)
+    end
+    local ok, parsed = pcall(vim.json.decode, res.stdout)
+    if not ok or type(parsed) ~= "table" then
+      return cb(nil)
+    end
+    local fqcn, obj = pick_entry(parsed, kw)
+    if not fqcn then return cb(nil) end
+    cb({ type = plug_type, fqcn = fqcn, obj = obj })
   end)
 end
 
-
 function M.lookup_ansible_doc()
-  local finalized = false
+  local opts = M.opts
+
   local kw = vim.fn.expand("<cWORD>"):gsub(":$", "")
   if kw == "" then
     vim.notify("[ansible-doc] No keyword under cursor", vim.log.levels.WARN)
     return
   end
 
-  local types = {
-    "become","cache","callback","cliconf","connection","httpapi","inventory",
-    "lookup","netconf","shell","vars","module","strategy","test","filter","role","keyword"
-  }
-
   local results = {}
-  local pending = #types
+  local seen = {} -- type|fqcn -> true
 
-  local function maybe_finish()
-  pending = pending - 1
-  if pending > 0 or finalized then
-    return
-  end
-  finalized = true
+  local types = opts.types
+  local total = #types
+  local finished = 0
 
-  -- defer *all* UI work
-  vim.schedule(function()
-    if #results == 0 then
-      vim.notify(("[ansible-doc] No docs for %q"):format(kw), vim.log.levels.WARN)
-      return
-    end
+  local i = 1
+  local running = 0
+  local done = false
 
-    if #results == 1 then
-      open_entry(results[1])
-      return
-    end
+  local function finalize()
+    if done then return end
+    done = true
 
-    vim.ui.select(results, {
-      prompt = "Select Ansible documentation:",
-      format_item = function(item)
-        return string.format("%-8s %s", item.type, item.fqcn)
-      end,
-    }, function(choice)
-      if choice then
-        open_entry(choice)
-      end
-    end)
-  end)
-end
-
-
-  for _, t in ipairs(types) do
-    local args = { "ansible-doc", "-t", t, "-j", kw }
-    vim.system(args, {
-      text = true,
-      env = { PAGER = "cat", NO_COLOR = "1", TERM = "dumb" },
-    }, function(res)
-      if res.code ~= 0 or not res.stdout or res.stdout == "" then
-        return maybe_finish()
+    vim.schedule(function()
+      if #results == 0 then
+        vim.notify(("[ansible-doc] No docs for %q"):format(kw), vim.log.levels.WARN)
+        return
       end
 
-      local ok, parsed = pcall(vim.json.decode, res.stdout)
-      if not ok or type(parsed) ~= "table" then
-        return maybe_finish()
+      if #results == 1 then
+        open_entry(opts, results[1])
+        return
       end
 
-      local fqcn, obj = pick_entry(parsed, kw)
-      if fqcn then
-        results[#results + 1] = {
-          type = t,
-          fqcn = fqcn,
-          obj  = obj,
-        }
-      end
-
-      maybe_finish()
+      vim.ui.select(results, {
+        prompt = "Select Ansible documentation:",
+        format_item = function(item)
+          return string.format("%-8s %s", item.type, item.fqcn)
+        end,
+      }, function(choice)
+        if choice then open_entry(opts, choice) end
+      end)
     end)
   end
+
+  local function maybe_finish_one()
+    finished = finished + 1
+    running = math.max(0, running - 1)
+    if finished >= total then
+      finalize()
+      return
+    end
+    -- continue pumping queue
+    vim.schedule(pump)
+  end
+
+  function pump()
+    if done then return end
+    while running < opts.max_jobs and i <= total do
+      local t = types[i]
+      i = i + 1
+      running = running + 1
+
+      system_ansible_doc(opts, t, kw, function(entry)
+        if entry then
+          local key = entry.type .. "|" .. entry.fqcn
+          if not seen[key] then
+            seen[key] = true
+            results[#results + 1] = entry
+          end
+        end
+        maybe_finish_one()
+      end)
+    end
+  end
+
+  pump()
 end
 
-function M.setup(opts)
-  opts = opts or {}
-  vim.keymap.set("n", opts.mapping or "K", M.lookup_ansible_doc, { desc = "Ansible-doc lookup (JSON)" })
+function M.setup(user_opts)
+  M.opts = vim.tbl_deep_extend("force", M.opts, user_opts or {})
+  vim.keymap.set("n", M.opts.mapping, M.lookup_ansible_doc, {
+    desc = "Ansible-doc lookup (JSON, parallel types)",
+  })
 end
 
 return M
