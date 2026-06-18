@@ -4,7 +4,6 @@ local M = {}
 -- Defaults / configuration
 -- -----------------------
 M.opts = {
-  mapping = "K",
 
   -- List of ansible-doc plugin types to probe.
   types = {
@@ -314,9 +313,6 @@ end
 
 function M.setup(user_opts)
   M.opts = vim.tbl_deep_extend("force", M.opts, user_opts or {})
-  vim.keymap.set("n", M.opts.mapping, M.lookup_ansible_doc, {
-    desc = "Ansible-doc lookup (JSON, parallel types)",
-  })
 end
 
 return M
