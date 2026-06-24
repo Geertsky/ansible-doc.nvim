@@ -338,10 +338,10 @@ function M.lookup_ansible_doc()
       return
     end
     -- continue pumping queue
-    vim.schedule(pump)
+    vim.schedule(Pump)
   end
 
-  function pump()
+  function Pump()
     if done then return end
     while running < opts.max_jobs and i <= total do
       local t = types[i]
@@ -361,7 +361,7 @@ function M.lookup_ansible_doc()
     end
   end
 
-  pump()
+  Pump()
 end
 
 function M.setup(user_opts)
