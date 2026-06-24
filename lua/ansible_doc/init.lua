@@ -251,11 +251,13 @@ local function open_entry(opts, entry)
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].filetype = "markdown"
     vim.bo[buf].modifiable = true
-    vim.bo[buf].readonly = true
+    vim.bo[buf].readonly = false
 
     local lines = render_markdown(entry.fqcn, entry.type, entry.obj)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
+    vim.bo[buf].readonly = true
+    vim.bo[buf].buflisted = false
   end
   if opts.window and opts.window.kind == "float" then
     open_float(opts, buf)
