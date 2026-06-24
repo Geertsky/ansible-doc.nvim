@@ -4,7 +4,14 @@ local M = {}
 -- Defaults / configuration
 -- -----------------------
 M.opts = {
-
+  -- default window settings
+  window = {
+    kind = "float",
+    width = 80,
+    height = 24,
+    border = "rounded",
+    style = "minimal",
+  },
   -- List of ansible-doc plugin types to probe.
   types = {
     "become", "cache", "callback", "cliconf", "connection", "httpapi", "inventory",
@@ -190,6 +197,49 @@ local function find_existing_buf(bufname)
   return nil
 end
 
+local function open_float(opts, buf)
+  local columns = vim.o.columns
+  local lines = vim.o.lines
+
+  local width = math.min(
+    opts.window.width or 80,
+    math.max(20, columns - 4)
+  )
+
+  local height = math.min(
+    opts.window.height or 24,
+    math.max(5, lines - 4)
+  )
+
+  local row = math.floor((lines - height) / 2 - 1)
+  local col = math.floor((columns - width) / 2)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = math.max(0, row),
+    col = math.max(0, col),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = opts.window.border or "rounded",
+  })
+
+  vim.wo[win].wrap = true
+  vim.wo[win].conceallevel = 2
+
+  vim.keymap.set("n", "q", function()
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_close(win, true)
+    end
+  end, {
+    buffer = buf,
+    silent = true,
+    desc = "Close Ansible documentation",
+  })
+
+  return win
+end
+
 local function open_entry(opts, entry)
   local bufname = ("ansible-doc://%s/%s"):format(entry.type, entry.fqcn)
   local buf = find_existing_buf(bufname)
@@ -207,9 +257,12 @@ local function open_entry(opts, entry)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
   end
-
-  vim.cmd(opts.open_cmd)
-  vim.api.nvim_win_set_buf(0, buf)
+  if opts.window and opts.window.kind == "float" then
+    open_float(opts, buf)
+  else
+    vim.cmd(opts.open_cmd)
+    vim.api.nvim_win_set_buf(0, buf)
+  end
 end
 
 -- -----------------------
