@@ -8,9 +8,7 @@ If exactly one match is found, it is opened directly. If multiple matches are fo
 
 ## Features
 
-* Looks up the keyword under the cursor.
-* Supports fully qualified Ansible names such as `ansible.builtin.import_tasks`.
-* Runs `ansible-doc -t <type> -j <keyword>` for multiple Ansible documentation types.
+* Looks up the keyword under the cursor for all types supported by ansible-doc -t.
 * Runs lookups in parallel with a configurable concurrency limit.
 * Prompts with `vim.ui.select()` when multiple documentation types match.
 * Renders documentation as Markdown.
