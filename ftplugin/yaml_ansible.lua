@@ -1,8 +1,14 @@
+local ansible_doc = require("ansible_doc")
+local mapping = ansible_doc.opts.mapping
 
--- ansible-doc
-for _, map in ipairs(vim.api.nvim_buf_get_keymap(0, "n")) do
-  if map.lhs == "K" and map.mode == "n" then
-    vim.keymap.del("n", "K", { buf = 0 })
-  end
+if mapping == false or mapping == nil or mapping == "" then
+  return
 end
-vim.keymap.set("n", "K", function () require("ansible_doc").lookup_ansible_doc() end, { desc = "lookup_ansible_doc", buf = 0 })
+
+vim.keymap.set("n", mapping, function()
+  ansible_doc.lookup_ansible_doc()
+end, {
+  buffer = true,
+  silent = true,
+  desc = "Show Ansible documentation",
+})

@@ -4,6 +4,8 @@ local M = {}
 -- Defaults / configuration
 -- -----------------------
 M.opts = {
+  -- default mapping
+  mapping = "K",
   -- default window settings
   window = {
     kind = "float",
